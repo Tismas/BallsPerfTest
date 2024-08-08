@@ -33,7 +33,7 @@ export class Ball {
   }
 
   static createBall = (canvas: HTMLCanvasElement) => {
-    const radius = 5;
+    const radius = 2;
     const position = Vector.random(
       radius * 2,
       canvas.width - radius * 2,

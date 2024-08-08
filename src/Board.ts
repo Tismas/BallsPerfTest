@@ -1,5 +1,7 @@
 import { Ball } from "./entities/Ball";
 
+const initialBalls = 100;
+
 export class Board {
   public balls: Ball[] = [];
 
@@ -18,7 +20,11 @@ export class Board {
   }
 
   setup(canvas: HTMLCanvasElement) {
-    for (let i = 0; i < 100; i++) {
+    this.addBalls(canvas, initialBalls);
+  }
+
+  addBalls(canvas: HTMLCanvasElement, count: number) {
+    for (let i = 0; i < count; i++) {
       this.balls.push(Ball.createBall(canvas));
     }
   }
