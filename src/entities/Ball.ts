@@ -35,10 +35,10 @@ export class Ball {
   static createBall = (canvas: HTMLCanvasElement) => {
     const radius = 5;
     const position = Vector.random(
-      radius,
-      canvas.width - radius,
-      radius,
-      canvas.height - radius
+      radius * 2,
+      canvas.width - radius * 2,
+      radius * 2,
+      canvas.height - radius * 2
     );
     const velocity = Vector.random(-1, 1, -1, 1).normalize().multiply(50);
 
