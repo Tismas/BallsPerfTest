@@ -5,7 +5,8 @@ const TPS = 60;
 const board = new Board();
 let lastUpdate = Date.now();
 let lastRender = Date.now();
-const lastFrameTime: number[] = [];
+const lastRenderFrameTime: number[] = [];
+const lastUpdateFrameTime: number[] = [];
 
 const draw = (canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) => {
   const now = Date.now();
@@ -23,15 +24,7 @@ const draw = (canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) => {
 
   requestAnimationFrame(() => draw(canvas, ctx));
 
-  lastFrameTime.push(delta);
-  if (lastFrameTime.length > 10) {
-    lastFrameTime.shift();
-
-    const avg = lastFrameTime.reduce((a, b) => a + b) / lastFrameTime.length;
-    if (avg < 1 / TPS) {
-      board.addBalls(canvas, 100);
-    }
-  }
+  lastRenderFrameTime.push(delta);
 };
 
 const update = () => {
@@ -40,6 +33,8 @@ const update = () => {
   lastUpdate = now;
 
   board.update(delta);
+
+  lastUpdateFrameTime.push(delta);
 };
 
 const resize = (canvas: HTMLCanvasElement) => {
@@ -60,6 +55,25 @@ const setup = () => {
 
   setInterval(update, 1000 / TPS);
   requestAnimationFrame(() => draw(canvas, ctx));
+
+  setInterval(() => {
+    const avgUpdateTime =
+      lastUpdateFrameTime.reduce((a, b) => a + b) / lastUpdateFrameTime.length;
+    const avgRenderTime =
+      lastRenderFrameTime.reduce((a, b) => a + b) / lastRenderFrameTime.length;
+    if (avgUpdateTime < 1 / TPS && avgRenderTime < 1 / TPS) {
+      board.addBalls(canvas, 100);
+    } else {
+      console.warn("FPS: ", 1 / avgRenderTime, "TPS: ", 1 / avgUpdateTime);
+    }
+
+    if (lastUpdateFrameTime.length > 10) {
+      lastUpdateFrameTime.shift();
+    }
+    if (lastRenderFrameTime.length > 10) {
+      lastRenderFrameTime.shift();
+    }
+  }, 1000 / 30);
 
   window.addEventListener("resize", () => resize(canvas));
 };
