@@ -1,15 +1,27 @@
-use std::sync::atomic::{self, AtomicU16};
-
 use bevy::{
     dev_tools::fps_overlay::{FpsOverlayConfig, FpsOverlayPlugin},
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     prelude::*,
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
+    window::{PresentMode, WindowResolution},
 };
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 
+#[derive(Resource)]
+struct Counter {
+    pub count: u32,
+}
 
-static atomic_counter: AtomicU16 = AtomicU16::new(0);
+#[derive(Component)]
+struct CounterStats;
+
+#[derive(Resource)]
+struct BallResource {
+    mesh_handle: Mesh2dHandle,
+    material_handle: Handle<ColorMaterial>,
+    rng: ChaCha8Rng,
+}
 
 #[derive(Component)]
 struct Ball;
@@ -17,22 +29,66 @@ struct Ball;
 #[derive(Component, Deref, DerefMut)]
 struct Velocity(Vec2);
 
-
 fn setup(
     mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
+    let ball_mesh = Mesh2dHandle(meshes.add(Circle { radius: 4.0 }));
+    let material = materials.add(Color::hsl(1.0, 0.0, 1.0));
+    let ball_resource = BallResource {
+        mesh_handle: ball_mesh,
+        material_handle: material,
+        rng: ChaCha8Rng::seed_from_u64(15),
+    };
+    let text_section = move |color: Color, value: &str| {
+        TextSection::new(
+            value,
+            TextStyle {
+                font_size: 40.0,
+                color: color.into(),
+                ..default()
+            },
+        )
+    };
+
     commands.spawn(Camera2dBundle::default());
+    commands.insert_resource(ball_resource);
+    commands
+        .spawn(NodeBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                padding: UiRect::all(Val::Px(5.0)),
+                right: Val::Px(5.0),
+                ..default()
+            },
+            z_index: ZIndex::Global(i32::MAX),
+            background_color: Color::BLACK.with_alpha(0.75).into(),
+            ..default()
+        })
+        .with_children(|c| {
+            c.spawn((
+                TextBundle::from_sections([
+                    text_section(Color::hsl(0.5, 1.0, 1.0), "Balls count: "),
+                    text_section(Color::hsl(0.5, 1.0, 1.0), "0"),
+                ]),
+                CounterStats,
+            ));
+        });
 }
 
 fn check_for_collisions(
     mut ball_query: Query<(&mut Velocity, &Transform), With<Ball>>,
-    window: Query<&Window>,
+    windows: Query<&Window>,
 ) {
+    let window = windows.single();
+    let half_window = 0.5 * window.size();
+
     for (mut velocity, transform) in ball_query.iter_mut() {
-        if transform.translation.x > 500.0 || transform.translation.x < -500.0 {
+        if transform.translation.x > half_window.x || transform.translation.x < -half_window.x {
             velocity.x = -velocity.x;
         }
-        if transform.translation.y > 400.0 || transform.translation.y < -400.0 {
+        if transform.translation.y > half_window.y || transform.translation.y < -half_window.y {
             velocity.y = -velocity.y;
         }
     }
@@ -47,8 +103,8 @@ fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>, time: Res<Time>
 
 fn check_fps_and_control_quantity(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut ball_resource: ResMut<BallResource>,
+    mut counter: ResMut<Counter>,
     diagnostics: Res<DiagnosticsStore>,
 ) {
     if let Some(value) = diagnostics
@@ -56,31 +112,47 @@ fn check_fps_and_control_quantity(
         .and_then(|fps| fps.smoothed())
     {
         if value > 60.0 {
-            for _ in 1..100 {
-              atomic_counter.fetch_add(1, atomic::Ordering::Relaxed);
-              let mut rng = rand::thread_rng();
-              let ball_mesh = Mesh2dHandle(meshes.add(Circle { radius: 4.0 }));
-              commands.spawn((
-                  MaterialMesh2dBundle {
-                      mesh: ball_mesh,
-                      material: materials.add(Color::hsl(1.0, 0.0, 1.0)),
-                      ..Default::default()
-                  },
-                  Ball,
-                  Velocity(Vec2::new(
-                      rng.gen_range(-40.0..40.0),
-                      rng.gen_range(-40.0..40.0),
-                  )),
-              ));
-            }
-            println!("Ball count: {}", atomic_counter.load(atomic::Ordering::Relaxed));
+            let balls_batch = (0..100)
+                .map(|_| {
+                    commands.spawn((
+                        SpriteBundle {
+                            ..Default::default()
+                        },
+                        // MaterialMesh2dBundle {
+                        //     mesh: ball_resource.mesh_handle.clone(),
+                        //     material: ball_resource.material_handle.clone(),
+                        //     ..Default::default()
+                        // },
+                        Ball,
+                        Velocity(Vec2::new(
+                            ball_resource.rng.gen_range(-60.0..60.0),
+                            ball_resource.rng.gen_range(-60.0..60.0),
+                        )),
+                    ));
+                })
+                .collect::<Vec<_>>();
+            commands.spawn_batch(balls_batch);
+            counter.count += 100;
         }
     }
 }
 
+fn counter_system(mut query: Query<&mut Text, With<CounterStats>>, counter: Res<Counter>) {
+    let mut text = query.single_mut();
+    text.sections[1].value = counter.count.to_string();
+}
+
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                resolution: WindowResolution::new(1920.0, 1080.0),
+                present_mode: PresentMode::AutoNoVsync,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }))
+        .insert_resource(Counter { count: 0 })
         .add_systems(Startup, setup)
         .add_systems(
             FixedUpdate,
@@ -88,6 +160,7 @@ fn main() {
                 apply_velocity,
                 check_for_collisions,
                 check_fps_and_control_quantity,
+                counter_system,
             )
                 .chain(),
         )
